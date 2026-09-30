@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SourcePlatform {
+  CHATGPT
+  GEMINI
+}
+
+enum ImportJobStatus {
+  UPLOADING
+  PARSING
+  ANALYZING
+  COMPLETED
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum KnowledgeCardType {
+  SUMMARY
+  INSIGHT
+  ACTION_ITEM
+  DECISION
+  REFERENCE
+}
+
+model User {
+  id                String          @id @default(cuid())
+  email             String          @unique
+  name              String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  importJobs        ImportJob[]
+  conversations     Conversation[]
+  tags              Tag[]
+  knowledgeCards    KnowledgeCard[]
+
+  @@map("users")
+}
+
+model ImportJob {
+  id                        String            @id @default(cuid())
+  userId                    String            @map("user_id")
+  sourcePlatform            SourcePlatform    @map("source_platform")
+  sourceFileName            String            @map("source_file_name")
+  fileType                  String            @map("file_type")
+  status                    ImportJobStatus
+  detectedConversationCount Int?              @map("detected_conversation_count")
+  detectedMessageCount      Int?              @map("detected_message_count")
+  errorMessage              String?           @map("error_message")
+  createdAt                 DateTime          @default(now()) @map("created_at")
+  finishedAt                DateTime?         @map("finished_at")
+  user                      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations             Conversation[]
+
+  @@index([userId, status])
+  @@map("import_jobs")
+}
+
+model Conversation {
+  id                    String                  @id @default(cuid())
+  userId                String                  @map("user_id")
+  importJobId           String?                 @map("import_job_id")
+  sourcePlatform        SourcePlatform          @map("source_platform")
+  sourceConversationId  String?                 @map("source_conversation_id")
+  title                 String
+  summary               String?
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  sourceCreatedAt       DateTime?               @map("source_created_at")
+  sourceUpdatedAt       DateTime?               @map("source_updated_at")
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  importJob             ImportJob?              @relation(fields: [importJobId], references: [id], onDelete: SetNull)
+  messages              Message[]
+  conversationTags      ConversationTag[]
+  knowledgeCards        KnowledgeCard[]
+  relatedConversations  RelatedConversation[]   @relation("ConversationRelations")
+  relatedToConversations RelatedConversation[]  @relation("RelatedToConversationRelations")
+
+  @@index([userId, sourcePlatform])
+  @@index([importJobId])
+  @@map("conversations")
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  conversationId  String        @map("conversation_id")
+  role            MessageRole
+  content         String
+  sequenceIndex   Int           @map("sequence_index")
+  sourceTimestamp DateTime?     @map("source_timestamp")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, sequenceIndex])
+  @@map("messages")
+}
+
+model Tag {
+  id               String             @id @default(cuid())
+  userId           String             @map("user_id")
+  name             String
+  createdAt        DateTime           @default(now()) @map("created_at")
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationTags ConversationTag[]
+
+  @@unique([userId, name])
+  @@map("tags")
+}
+
+model ConversationTag {
+  id             String        @id @default(cuid())
+  conversationId String        @map("conversation_id")
+  tagId          String        @map("tag_id")
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag            Tag           @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, tagId])
+  @@map("conversation_tags")
+}
+
+model KnowledgeCard {
+  id             String             @id @default(cuid())
+  userId         String             @map("user_id")
+  conversationId String             @map("conversation_id")
+  cardType       KnowledgeCardType  @map("card_type")
+  title          String
+  summary        String?
+  content        String
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, cardType])
+  @@index([conversationId])
+  @@map("knowledge_cards")
+}
+
+model RelatedConversation {
+  id                    String        @id @default(cuid())
+  conversationId        String        @map("conversation_id")
+  relatedConversationId String        @map("related_conversation_id")
+  score                 Float
+  createdAt             DateTime      @default(now()) @map("created_at")
+  conversation          Conversation  @relation("ConversationRelations", fields: [conversationId], references: [id], onDelete: Cascade)
+  relatedConversation   Conversation  @relation("RelatedToConversationRelations", fields: [relatedConversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, relatedConversationId])
+  @@index([relatedConversationId])
+  @@map("related_conversations")
+}
